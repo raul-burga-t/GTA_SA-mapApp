@@ -1,4 +1,7 @@
 package com.raul.minimapagta
 
-class MainActivity {
+import androidx.activity.ComponentActivity
+
+class MainActivity : ComponentActivity() {
+    // ... tu código ...
 }
