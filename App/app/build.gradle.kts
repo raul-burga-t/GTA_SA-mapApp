@@ -69,6 +69,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation("com.mapbox.mapboxsdk:mapbox-sdk-services:6.15.0")
 
     testImplementation(libs.junit)
 
