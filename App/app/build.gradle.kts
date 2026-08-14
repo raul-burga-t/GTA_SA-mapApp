@@ -69,8 +69,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation("com.mapbox.mapboxsdk:mapbox-sdk-services:6.15.0")
+    // API de Rutas de Mapbox y calculadora matemática Turf
+    implementation("com.mapbox.mapboxsdk:mapbox-sdk-services:5.8.0")
+    implementation("com.mapbox.mapboxsdk:mapbox-sdk-turf:5.8.0")
 
+// Motor de conexión a internet (Retrofit)
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
     testImplementation(libs.junit)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
