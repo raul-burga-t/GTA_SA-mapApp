@@ -55,6 +55,7 @@ import retrofit2.Response
 import com.raul.minimapagta.R
 import com.mapbox.geojson.utils.PolylineUtils
 
+
 /**
  * Pantalla principal del minimapa estilo GTA San Andreas.
  * Maneja la ubicación del usuario, la renderización del mapa personalizado,
@@ -239,6 +240,19 @@ fun MapScreen() {
                     iconSize = 0.5
                     iconOpacity = 1.0
                 }
+            }
+        }
+        // Control para quitar el Waypoint (Superior Derecha)
+        if (destinationPoint != null) {
+            Button(
+                onClick = {
+                    destinationPoint = null
+                    routeCoordinates = emptyList()
+                    sharedPref.edit().remove("dest_lat").remove("dest_lng").apply()
+                },
+                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+            ) {
+                Text("Quitar Destino")
             }
         }
 
