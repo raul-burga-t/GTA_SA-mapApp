@@ -3,37 +3,38 @@ package com.raul.minimapagta.data.local
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
-import androidx.room.Transaction
 import com.raul.minimapagta.data.model.PuntoDestacadoEntity
 import com.raul.minimapagta.data.model.PuntoEntity
+import kotlin.jvm.JvmSuppressWildcards
 
 @Dao
+@JvmSuppressWildcards // <-- ESTO EVITA EL CHOQUE DE CONTINUATION ENTRE KOTLIN Y JAVA
 interface PuntoDao {
 
-    // Inserta el punto base y devuelve el ID generado automáticamente
     @Insert
     suspend fun insertarPunto(punto: PuntoEntity): Long
 
-    // Inserta los detalles del punto destacado usando el ID anterior
     @Insert
-    suspend fun insertarPuntoDestacado(puntoDestacado: PuntoDestacadoEntity)
+    suspend fun insertarPuntoDestacado(puntoDestacado: PuntoDestacadoEntity): Long
 
-    // Función principal que usará la App: Guarda ambas tablas de un solo golpe
-    @Transaction
-    suspend fun guardarPuntoRelevante(punto: PuntoEntity, nombre: String, descripcion: String) {
-        // 1. Guarda la coordenada
-        val idPuntoGenerado = insertarPunto(punto)
-
-        // 2. Guarda el texto asociándolo a la coordenada
-        val destacado = PuntoDestacadoEntity(
-            idPunto = idPuntoGenerado.toInt(),
-            nombre = nombre,
-            descripcion = descripcion
-        )
-        insertarPuntoDestacado(destacado)
-    }
-
-    // Obtener todos los puntos para dibujarlos en el mapa al cargar
     @Query("SELECT * FROM punto")
     suspend fun obtenerTodosLosPuntos(): List<PuntoEntity>
+}
+
+/**
+ * FUNCION DE EXTENSIÓN:
+ * Mantenemos la lógica fuera del @Dao para que no choque con la máquina virtual de Java.
+ */
+suspend fun PuntoDao.guardarPuntoRelevante(punto: PuntoEntity, nombre: String, descripcion: String) {
+    // 1. Guardamos la coordenada y obtenemos su ID
+    val idPuntoGenerado = insertarPunto(punto)
+
+    // 2. Guardamos la información
+    val destacado = PuntoDestacadoEntity(
+        idPunto = idPuntoGenerado.toInt(),
+        nombre = nombre,
+        descripcion = descripcion
+    )
+
+    insertarPuntoDestacado(destacado)
 }
