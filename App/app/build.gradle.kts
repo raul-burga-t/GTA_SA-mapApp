@@ -13,6 +13,7 @@ val mapboxPublicToken = localProperties.getProperty("MAPBOX_PUBLIC_TOKEN") ?: ""
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -59,7 +60,7 @@ android {
         }
     }
 }
-
+val roomVersion = "2.6.1"
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
@@ -89,4 +90,10 @@ dependencies {
     // MAPBOX - COMPATIBILIDAD 16 KB
     implementation("com.mapbox.maps:android-ndk27:11.8.0")
     implementation("com.mapbox.extension:maps-compose-ndk27:11.8.0")
+
+    // Librerías de Room (Base de datos SQLite local)
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+
+    ksp("androidx.room:room-compiler:$roomVersion")
 }
