@@ -18,6 +18,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,11 +32,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -55,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -85,7 +93,10 @@ import retrofit2.Callback
 import retrofit2.Response
 import com.raul.minimapagta.R
 import com.raul.minimapagta.data.local.AppDatabase
+import com.raul.minimapagta.data.local.eliminarPuntoRelevante
 import com.raul.minimapagta.data.local.guardarPuntoRelevante
+import com.raul.minimapagta.data.local.modificarPuntoRelevante
+import com.raul.minimapagta.data.model.PuntoConDetalles
 import com.raul.minimapagta.data.model.PuntoEntity
 
 @SuppressLint("MissingPermission")
@@ -95,24 +106,28 @@ fun MapScreen() {
     val mapboxToken = stringResource(id = R.string.mapbox_access_token)
     val sharedPref = context.getSharedPreferences("GTA_Radar_Prefs", Context.MODE_PRIVATE)
 
-    // Instancia de Base de Datos y Corrutinas
     val dao = remember { AppDatabase.getDatabase(context).puntoDao() }
     val scope = rememberCoroutineScope()
 
-    // Lista de puntos persistentes extraídos de SQLite
-    var savedPoints by remember { mutableStateOf<List<PuntoEntity>>(emptyList()) }
+    // AHORA USA LA NUEVA CLASE HÍBRIDA (PuntoConDetalles)
+    var savedPoints by remember { mutableStateOf<List<PuntoConDetalles>>(emptyList()) }
 
     var hasLocationPermission by remember { mutableStateOf(false) }
     var isCameraRotating by remember { mutableStateOf(false) }
     var isMenuOpen by remember { mutableStateOf(false) }
 
-    // ESTADOS PARA EL FORMULARIO (CU-03)
+    // ESTADOS DEL PANEL DE ADMINISTRACIÓN
+    var isPointsAdminOpen by remember { mutableStateOf(false) }
+    var pointToDelete by remember { mutableStateOf<PuntoConDetalles?>(null) }
+
+    // ESTADOS DEL FORMULARIO (Creación y Edición)
     var isPointFormOpen by remember { mutableStateOf(false) }
+    var isEditing by remember { mutableStateOf(false) }
+    var editingPointId by remember { mutableStateOf<Int?>(null) }
+
     var pendingPoint by remember { mutableStateOf<Point?>(null) }
     var pointName by remember { mutableStateOf("") }
 
-    // Generador dinámico de los 59 íconos (desde icon_5 hasta icon_63)
-    // Se guarda como Pair<NombreString, IdRecursoInt>
     val iconosDisponibles = remember {
         (5..63).mapNotNull { i ->
             val nombreIcono = "icon_$i"
@@ -120,17 +135,14 @@ fun MapScreen() {
             if (resId != 0) Pair(nombreIcono, resId) else null
         }
     }
-
-    // Estado para el ícono seleccionado (por defecto el primero de la lista)
     var selectedIcon by remember { mutableStateOf(iconosDisponibles.firstOrNull()) }
 
     var destinationPoint by remember { mutableStateOf<Point?>(null) }
     var routeCoordinates by remember { mutableStateOf<List<Point>>(emptyList()) }
 
-    // Carga inicial de datos
     LaunchedEffect(Unit) {
-        // Cargar puntos guardados en la BD
-        savedPoints = dao.obtenerTodosLosPuntos()
+        // Obtenemos los puntos con nombre e ícono al arrancar
+        savedPoints = dao.obtenerPuntosConDetalles()
 
         val lat = sharedPref.getFloat("dest_lat", Float.NaN)
         val lng = sharedPref.getFloat("dest_lng", Float.NaN)
@@ -229,11 +241,9 @@ fun MapScreen() {
         ) {
             MapEffect(Unit) { mapView ->
                 mapView.mapboxMap.getStyle { style ->
-                    // Cargar marcador temporal
                     val bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.radar_waypoint)
                     style.addImage("marcador_destino", bitmap)
 
-                    // Cargar TODOS los íconos de la lista al estilo del mapa
                     iconosDisponibles.forEach { (nombre, idRecurso) ->
                         val iconBmp = BitmapFactory.decodeResource(context.resources, idRecurso)
                         style.addImage(nombre, iconBmp)
@@ -257,13 +267,12 @@ fun MapScreen() {
                 }
             }
 
-            // DIBUJAR LOS PUNTOS RELEVANTES DESDE LA BASE DE DATOS
             savedPoints.forEach { punto ->
                 PointAnnotation(
                     point = Point.fromLngLat(punto.longitud, punto.latitud)
                 ) {
-                    iconImage = IconImage(punto.iconoSprite) // Usa el texto "icon_x" guardado en BD
-                    iconSize = 0.5 // Ajusta este tamaño si los íconos se ven muy grandes
+                    iconImage = IconImage(punto.iconoSprite)
+                    iconSize = 0.5
                     iconOpacity = 1.0
                 }
             }
@@ -285,15 +294,14 @@ fun MapScreen() {
         )
 
         // CAPA 3: BOTONES INFERIORES IZQUIERDOS
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(16.dp)
-        ) {
+        Column(modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)) {
             Button(onClick = {
                 viewportState.cameraState?.center?.let { center ->
                     pendingPoint = center
+                    pointName = ""
                     selectedIcon = iconosDisponibles.firstOrNull()
+                    isEditing = false
+                    editingPointId = null
                     isPointFormOpen = true
                 }
             }) {
@@ -323,9 +331,7 @@ fun MapScreen() {
 
         // CAPA 5: BOTONES SUPERIORES DERECHOS
         Column(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 50.dp, end = 16.dp),
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 16.dp),
             horizontalAlignment = Alignment.End
         ) {
             Button(onClick = { /* Form Misión */ }) { Text("Agregar Misión") }
@@ -360,6 +366,12 @@ fun MapScreen() {
                     MenuListItem(texto = "Revisar Misiones", iconId = R.drawable.ic_flecha_menu) {}
                     Spacer(modifier = Modifier.height(24.dp))
                     MenuListItem(texto = "Revisar Rutinas", iconId = R.drawable.ic_flecha_menu) {}
+                    Spacer(modifier = Modifier.height(24.dp))
+                    // NUEVO BOTÓN DE ADMINISTRACIÓN
+                    MenuListItem(texto = "Revisar puntos de interés", iconId = R.drawable.ic_flecha_menu) {
+                        isMenuOpen = false
+                        isPointsAdminOpen = true
+                    }
                 }
             }
         }
@@ -377,13 +389,88 @@ fun MapScreen() {
         }
 
         // =========================================================================
-        // FORMULARIO CU-03 CON GRILLA Y LÓGICA DE BASE DE DATOS
+        // PANTALLA: ADMINISTRAR PUNTOS DE INTERÉS
+        // =========================================================================
+        AnimatedVisibility(
+            visible = isPointsAdminOpen,
+            enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xE6000000))
+                    .clickable(enabled = false) {}
+                    .padding(16.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize()) {
+                    Text("Puntos de Interés", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Encabezado de la tabla
+                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Nombre", color = Color.LightGray, modifier = Modifier.weight(2f))
+                        Text("Ícono", color = Color.LightGray, modifier = Modifier.weight(1f))
+                        Text("Acciones", color = Color.LightGray, modifier = Modifier.weight(1f))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Lista de puntos (Tabla)
+                    LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        items(savedPoints) { punto ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                                    .background(Color(0x33FFFFFF), RoundedCornerShape(8.dp))
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(punto.nombre, color = Color.White, modifier = Modifier.weight(2f))
+
+                                val iconoRecurso = iconosDisponibles.find { it.first == punto.iconoSprite }?.second
+                                if (iconoRecurso != null) {
+                                    Image(
+                                        painter = painterResource(id = iconoRecurso),
+                                        contentDescription = null,
+                                        modifier = Modifier.weight(1f).size(32.dp)
+                                    )
+                                } else {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+
+                                Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                    // BOTÓN MODIFICAR
+                                    IconButton(onClick = {
+                                        pointName = punto.nombre
+                                        selectedIcon = iconosDisponibles.find { it.first == punto.iconoSprite }
+                                        editingPointId = punto.id
+                                        isEditing = true
+                                        isPointsAdminOpen = false
+                                        isPointFormOpen = true
+                                    }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color.Green)
+                                    }
+                                    // BOTÓN ELIMINAR
+                                    IconButton(onClick = { pointToDelete = punto }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color.Red)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { isPointsAdminOpen = false }) { Text("Cerrar Panel") }
+                }
+            }
+        }
+
+        // =========================================================================
+        // FORMULARIO: AGREGAR / EDITAR PUNTO
         // =========================================================================
         AnimatedVisibility(
             visible = isPointFormOpen,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.fillMaxSize()
+            enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()
         ) {
             Box(
                 modifier = Modifier
@@ -394,7 +481,10 @@ fun MapScreen() {
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "Nuevo Punto Relevante", color = Color.White, fontSize = 24.sp)
+                    Text(
+                        text = if (isEditing) "Modificar Punto" else "Nuevo Punto Relevante",
+                        color = Color.White, fontSize = 24.sp
+                    )
                     Spacer(modifier = Modifier.height(24.dp))
 
                     OutlinedTextField(
@@ -402,44 +492,33 @@ fun MapScreen() {
                         onValueChange = { pointName = it },
                         label = { Text("Nombre del lugar", color = Color.LightGray) },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color.White,
-                            unfocusedBorderColor = Color.Gray,
-                            cursorColor = Color.White
+                            focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color.White, unfocusedBorderColor = Color.Gray
                         ),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     Spacer(modifier = Modifier.height(24.dp))
-
                     Text("Selecciona un ícono:", color = Color.White, modifier = Modifier.align(Alignment.Start))
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // GRILLA DE ÍCONOS SCROLLEABLE
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 64.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 250.dp)
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp)
                     ) {
                         items(iconosDisponibles) { iconPair ->
                             val isSelected = selectedIcon?.first == iconPair.first
-
                             Box(
                                 modifier = Modifier
-                                    .padding(4.dp)
-                                    .size(64.dp)
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .padding(4.dp).size(64.dp).clip(RoundedCornerShape(8.dp))
                                     .background(if (isSelected) Color(0x40FFFFFF) else Color.Transparent)
                                     .border(
                                         width = if (isSelected) 2.dp else 0.dp,
                                         color = if (isSelected) Color.White else Color.Transparent,
                                         shape = RoundedCornerShape(8.dp)
                                     )
-                                    .clickable { selectedIcon = iconPair }
-                                    .padding(8.dp),
+                                    .clickable { selectedIcon = iconPair }.padding(8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Image(
@@ -457,48 +536,89 @@ fun MapScreen() {
                         Button(
                             onClick = {
                                 isPointFormOpen = false
-                                pointName = ""
+                                if (isEditing) isPointsAdminOpen = true // Si estaba editando, regresa a la tabla
                             },
                             modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Cancelar")
-                        }
+                        ) { Text("Cancelar") }
+
                         Spacer(modifier = Modifier.width(16.dp))
+
                         Button(
                             onClick = {
-                                pendingPoint?.let { nuevoPunto ->
-
-                                    // VALIDACIÓN CU-03: Excepción distancia menor a 5m
-                                    val isTooClose = savedPoints.any { existente ->
-                                        val pt = Point.fromLngLat(existente.longitud, existente.latitud)
-                                        TurfMeasurement.distance(nuevoPunto, pt, TurfConstants.UNIT_METERS) < 5.0
-                                    }
-
-                                    if (isTooClose) {
-                                        Toast.makeText(context, "Muy cerca de otro punto (Mínimo 5m)", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        // Lanzar corrutina para guardar en Room
-                                        scope.launch {
-                                            val entidad = PuntoEntity(
-                                                latitud = nuevoPunto.latitude(),
-                                                longitud = nuevoPunto.longitude(),
-                                                iconoSprite = selectedIcon?.first ?: "icon_5"
-                                            )
-                                            dao.guardarPuntoRelevante(entidad, pointName, "Sin descripción")
-
-                                            // Actualizar el mapa recargando los datos
-                                            savedPoints = dao.obtenerTodosLosPuntos()
-                                        }
+                                scope.launch {
+                                    if (isEditing && editingPointId != null) {
+                                        // FLUJO ACTUALIZAR
+                                        dao.modificarPuntoRelevante(editingPointId!!, pointName, selectedIcon?.first ?: "icon_5")
                                         isPointFormOpen = false
-                                        pointName = ""
+                                        isPointsAdminOpen = true // Regresa a la tabla
+                                    } else {
+                                        // FLUJO GUARDAR (Con regla de 5 metros)
+                                        pendingPoint?.let { nuevoPunto ->
+                                            val isTooClose = savedPoints.any { existente ->
+                                                val pt = Point.fromLngLat(existente.longitud, existente.latitud)
+                                                TurfMeasurement.distance(nuevoPunto, pt, TurfConstants.UNIT_METERS) < 5.0
+                                            }
+
+                                            if (isTooClose) {
+                                                Toast.makeText(context, "Muy cerca de otro punto (Mínimo 5m)", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                val entidad = PuntoEntity(
+                                                    latitud = nuevoPunto.latitude(), longitud = nuevoPunto.longitude(),
+                                                    iconoSprite = selectedIcon?.first ?: "icon_5"
+                                                )
+                                                dao.guardarPuntoRelevante(entidad, pointName, "Sin descripción")
+                                                isPointFormOpen = false
+                                            }
+                                        }
                                     }
+                                    // Recarga la lista en ambos casos
+                                    savedPoints = dao.obtenerPuntosConDetalles()
                                 }
                             },
                             modifier = Modifier.weight(1f),
                             enabled = pointName.isNotBlank() && selectedIcon != null
-                        ) {
-                            Text("Aceptar")
-                        }
+                        ) { Text("Aceptar") }
+                    }
+                }
+            }
+        }
+
+        // =========================================================================
+        // CUADRO DE ADVERTENCIA PARA ELIMINAR
+        // =========================================================================
+        AnimatedVisibility(
+            visible = pointToDelete != null,
+            enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xE6000000))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    modifier = Modifier.background(Color(0xFF222222), RoundedCornerShape(16.dp)).padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("¿Eliminar '${pointToDelete?.nombre}'?", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Esta acción no se puede deshacer.", color = Color.Gray, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Row {
+                        Button(onClick = { pointToDelete = null }) { Text("Cancelar") }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Button(
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                            onClick = {
+                                scope.launch {
+                                    pointToDelete?.let { dao.eliminarPuntoRelevante(it.id) }
+                                    savedPoints = dao.obtenerPuntosConDetalles()
+                                    pointToDelete = null
+                                }
+                            }
+                        ) { Text("Eliminar") }
                     }
                 }
             }
@@ -515,17 +635,8 @@ fun MenuListItem(texto: String, iconId: Int, onClick: () -> Unit) {
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            painter = painterResource(id = iconId),
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(24.dp)
-        )
+        Icon(painter = painterResource(id = iconId), contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
         Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = texto,
-            color = Color.White,
-            fontSize = 18.sp
-        )
+        Text(text = texto, color = Color.White, fontSize = 18.sp)
     }
 }

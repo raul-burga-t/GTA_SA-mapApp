@@ -28,3 +28,11 @@ data class PuntoDestacadoEntity(
     val nombre: String,
     val descripcion: String
 )
+data class PuntoConDetalles(
+    val id: Int,
+    val latitud: Double,
+    val longitud: Double,
+    val iconoSprite: String,
+    val nombre: String,
+    val descripcion: String
+)
