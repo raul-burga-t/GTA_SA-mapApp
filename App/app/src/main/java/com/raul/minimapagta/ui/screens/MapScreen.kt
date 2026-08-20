@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.location.LocationManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -45,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,10 +79,14 @@ import com.mapbox.maps.plugin.viewport.data.FollowPuckViewportStateBearing
 import com.mapbox.maps.plugin.viewport.data.FollowPuckViewportStateOptions
 import com.mapbox.turf.TurfConstants
 import com.mapbox.turf.TurfMeasurement
+import kotlinx.coroutines.launch
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
 import com.raul.minimapagta.R
+import com.raul.minimapagta.data.local.AppDatabase
+import com.raul.minimapagta.data.local.guardarPuntoRelevante
+import com.raul.minimapagta.data.model.PuntoEntity
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -88,6 +94,13 @@ fun MapScreen() {
     val context = LocalContext.current
     val mapboxToken = stringResource(id = R.string.mapbox_access_token)
     val sharedPref = context.getSharedPreferences("GTA_Radar_Prefs", Context.MODE_PRIVATE)
+
+    // Instancia de Base de Datos y Corrutinas
+    val dao = remember { AppDatabase.getDatabase(context).puntoDao() }
+    val scope = rememberCoroutineScope()
+
+    // Lista de puntos persistentes extraídos de SQLite
+    var savedPoints by remember { mutableStateOf<List<PuntoEntity>>(emptyList()) }
 
     var hasLocationPermission by remember { mutableStateOf(false) }
     var isCameraRotating by remember { mutableStateOf(false) }
@@ -98,23 +111,27 @@ fun MapScreen() {
     var pendingPoint by remember { mutableStateOf<Point?>(null) }
     var pointName by remember { mutableStateOf("") }
 
-    // Lista de tus 63 íconos
+    // Generador dinámico de los 59 íconos (desde icon_5 hasta icon_63)
+    // Se guarda como Pair<NombreString, IdRecursoInt>
     val iconosDisponibles = remember {
-        listOf(
-            R.drawable.icon_2, // Tu ícono actual de prueba
-            R.drawable.radar_waypoint,
-            R.drawable.icon_0,
-            R.drawable.icon_5,
-            R.drawable.icon_35,
-        )
+        (5..63).mapNotNull { i ->
+            val nombreIcono = "icon_$i"
+            val resId = context.resources.getIdentifier(nombreIcono, "drawable", context.packageName)
+            if (resId != 0) Pair(nombreIcono, resId) else null
+        }
     }
-    // Estado para guardar el ID numérico del ícono seleccionado (por defecto el primero)
-    var selectedIconRes by remember { mutableStateOf(iconosDisponibles.firstOrNull() ?: 0) }
+
+    // Estado para el ícono seleccionado (por defecto el primero de la lista)
+    var selectedIcon by remember { mutableStateOf(iconosDisponibles.firstOrNull()) }
 
     var destinationPoint by remember { mutableStateOf<Point?>(null) }
     var routeCoordinates by remember { mutableStateOf<List<Point>>(emptyList()) }
 
+    // Carga inicial de datos
     LaunchedEffect(Unit) {
+        // Cargar puntos guardados en la BD
+        savedPoints = dao.obtenerTodosLosPuntos()
+
         val lat = sharedPref.getFloat("dest_lat", Float.NaN)
         val lng = sharedPref.getFloat("dest_lng", Float.NaN)
         if (!lat.isNaN() && !lng.isNaN()) {
@@ -212,8 +229,15 @@ fun MapScreen() {
         ) {
             MapEffect(Unit) { mapView ->
                 mapView.mapboxMap.getStyle { style ->
+                    // Cargar marcador temporal
                     val bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.radar_waypoint)
                     style.addImage("marcador_destino", bitmap)
+
+                    // Cargar TODOS los íconos de la lista al estilo del mapa
+                    iconosDisponibles.forEach { (nombre, idRecurso) ->
+                        val iconBmp = BitmapFactory.decodeResource(context.resources, idRecurso)
+                        style.addImage(nombre, iconBmp)
+                    }
                 }
                 mapView.location.updateSettings {
                     enabled = true
@@ -230,6 +254,17 @@ fun MapScreen() {
                 PolylineAnnotation(points = routeCoordinates) {
                     lineColor = Color.Red
                     lineWidth = 6.0
+                }
+            }
+
+            // DIBUJAR LOS PUNTOS RELEVANTES DESDE LA BASE DE DATOS
+            savedPoints.forEach { punto ->
+                PointAnnotation(
+                    point = Point.fromLngLat(punto.longitud, punto.latitud)
+                ) {
+                    iconImage = IconImage(punto.iconoSprite) // Usa el texto "icon_x" guardado en BD
+                    iconSize = 0.5 // Ajusta este tamaño si los íconos se ven muy grandes
+                    iconOpacity = 1.0
                 }
             }
 
@@ -258,8 +293,7 @@ fun MapScreen() {
             Button(onClick = {
                 viewportState.cameraState?.center?.let { center ->
                     pendingPoint = center
-                    // Al abrir, seleccionamos por defecto el primer ícono de la lista
-                    selectedIconRes = iconosDisponibles.firstOrNull() ?: 0
+                    selectedIcon = iconosDisponibles.firstOrNull()
                     isPointFormOpen = true
                 }
             }) {
@@ -343,7 +377,7 @@ fun MapScreen() {
         }
 
         // =========================================================================
-        // FORMULARIO CU-03 CON GRILLA DE ÍCONOS
+        // FORMULARIO CU-03 CON GRILLA Y LÓGICA DE BASE DE DATOS
         // =========================================================================
         AnimatedVisibility(
             visible = isPointFormOpen,
@@ -388,10 +422,10 @@ fun MapScreen() {
                         columns = GridCells.Adaptive(minSize = 64.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 250.dp) // Limita la altura para que no tape los botones de abajo
+                            .heightIn(max = 250.dp)
                     ) {
-                        items(iconosDisponibles) { iconRes ->
-                            val isSelected = selectedIconRes == iconRes
+                        items(iconosDisponibles) { iconPair ->
+                            val isSelected = selectedIcon?.first == iconPair.first
 
                             Box(
                                 modifier = Modifier
@@ -404,17 +438,15 @@ fun MapScreen() {
                                         color = if (isSelected) Color.White else Color.Transparent,
                                         shape = RoundedCornerShape(8.dp)
                                     )
-                                    .clickable { selectedIconRes = iconRes }
+                                    .clickable { selectedIcon = iconPair }
                                     .padding(8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (iconRes != 0) {
-                                    Image(
-                                        painter = painterResource(id = iconRes),
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
+                                Image(
+                                    painter = painterResource(id = iconPair.second),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             }
                         }
                     }
@@ -434,12 +466,36 @@ fun MapScreen() {
                         Spacer(modifier = Modifier.width(16.dp))
                         Button(
                             onClick = {
-                                // TODO: Guardar en Room usando pendingPoint, pointName y selectedIconRes
-                                isPointFormOpen = false
-                                pointName = ""
+                                pendingPoint?.let { nuevoPunto ->
+
+                                    // VALIDACIÓN CU-03: Excepción distancia menor a 5m
+                                    val isTooClose = savedPoints.any { existente ->
+                                        val pt = Point.fromLngLat(existente.longitud, existente.latitud)
+                                        TurfMeasurement.distance(nuevoPunto, pt, TurfConstants.UNIT_METERS) < 5.0
+                                    }
+
+                                    if (isTooClose) {
+                                        Toast.makeText(context, "Muy cerca de otro punto (Mínimo 5m)", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        // Lanzar corrutina para guardar en Room
+                                        scope.launch {
+                                            val entidad = PuntoEntity(
+                                                latitud = nuevoPunto.latitude(),
+                                                longitud = nuevoPunto.longitude(),
+                                                iconoSprite = selectedIcon?.first ?: "icon_5"
+                                            )
+                                            dao.guardarPuntoRelevante(entidad, pointName, "Sin descripción")
+
+                                            // Actualizar el mapa recargando los datos
+                                            savedPoints = dao.obtenerTodosLosPuntos()
+                                        }
+                                        isPointFormOpen = false
+                                        pointName = ""
+                                    }
+                                }
                             },
                             modifier = Modifier.weight(1f),
-                            enabled = pointName.isNotBlank() && selectedIconRes != 0
+                            enabled = pointName.isNotBlank() && selectedIcon != null
                         ) {
                             Text("Aceptar")
                         }
