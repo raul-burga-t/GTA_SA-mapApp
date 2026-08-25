@@ -98,6 +98,17 @@ import com.raul.minimapagta.data.local.guardarPuntoRelevante
 import com.raul.minimapagta.data.local.modificarPuntoRelevante
 import com.raul.minimapagta.data.model.PuntoConDetalles
 import com.raul.minimapagta.data.model.PuntoEntity
+import com.mapbox.maps.extension.style.layers.generated.LineLayer
+import com.mapbox.maps.extension.style.layers.generated.SymbolLayer
+import com.mapbox.maps.extension.style.sources.generated.GeoJsonSource
+import com.mapbox.maps.extension.style.sources.generated.geoJsonSource
+import com.mapbox.maps.extension.style.layers.generated.lineLayer
+import com.mapbox.maps.extension.style.layers.generated.symbolLayer
+import com.mapbox.geojson.Feature
+import com.mapbox.geojson.FeatureCollection
+import android.view.Gravity
+import com.mapbox.maps.plugin.scalebar.scalebar
+import com.mapbox.maps.plugin.compass.compass
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -237,8 +248,10 @@ fun MapScreen() {
         MapboxMap(
             modifier = Modifier.fillMaxSize(),
             mapViewportState = viewportState,
-            style = { MapStyle(style = "mapbox://styles/raul2005/cmsnqjsyh01a401qo4io098fm") }
+            style = { MapStyle(style = "mapbox://styles/raul2005/cmsnqjsyh01a401qo4io098fm") },
+
         ) {
+            // CAPA 0: Carga de imágenes/sprites en el estilo (no dibuja nada por sí sola)
             MapEffect(Unit) { mapView ->
                 mapView.mapboxMap.getStyle { style ->
                     val bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.radar_waypoint)
@@ -249,6 +262,48 @@ fun MapScreen() {
                         style.addImage(nombre, iconBmp)
                     }
                 }
+            }
+
+
+            // CAPA 1: RUTA
+            if (routeCoordinates.isNotEmpty()) {
+                PolylineAnnotation(points = routeCoordinates) {
+                    lineColor = Color.Red
+                    lineWidth = 6.0
+                }
+            }
+            // Opacidad dinámica de los puntos guardados según el zoom de la cámara
+            val currentZoom = viewportState.cameraState?.zoom ?: 16.0
+            val zoomVisibleDesde = 7.5   // debajo de este zoom, los puntos ya casi no se ven
+            val zoomVisibleHasta = 10.0   // en este zoom o más cercano, se ven al 100%
+
+            val savedPointsOpacity = when {
+                currentZoom >= zoomVisibleHasta -> 1.0
+                currentZoom <= zoomVisibleDesde -> 0.0
+                else -> (currentZoom - zoomVisibleDesde) / (zoomVisibleHasta - zoomVisibleDesde)
+            }
+            // CAPA 2: puntos-layer
+            savedPoints.forEach { punto ->
+                PointAnnotation(
+                    point = Point.fromLngLat(punto.longitud, punto.latitud)
+                ) {
+                    iconImage = IconImage(punto.iconoSprite)
+                    iconSize = 0.5
+                    iconOpacity = savedPointsOpacity
+                }
+            }
+
+            // CAPA 3: destino-layer
+            destinationPoint?.let { point ->
+                PointAnnotation(point = point) {
+                    iconImage = IconImage("marcador_destino")
+                    iconSize = 0.5
+                    iconOpacity = 1.0
+                }
+            }
+
+            // CAPA 4: LocationPuck — se activa AL FINAL para quedar arriba de todo lo demás
+            MapEffect(Unit) { mapView ->
                 mapView.location.updateSettings {
                     enabled = true
                     locationPuck = LocationPuck2D(
@@ -259,31 +314,12 @@ fun MapScreen() {
                     puckBearing = PuckBearing.COURSE
                 }
             }
-
-            if (routeCoordinates.isNotEmpty()) {
-                PolylineAnnotation(points = routeCoordinates) {
-                    lineColor = Color.Red
-                    lineWidth = 6.0
+            MapEffect(savedPoints, destinationPoint, routeCoordinates) { mapView ->
+                mapView.mapboxMap.getStyle { style ->
+                    style.moveStyleLayer("mapbox-location-indicator-layer", null)
                 }
             }
 
-            savedPoints.forEach { punto ->
-                PointAnnotation(
-                    point = Point.fromLngLat(punto.longitud, punto.latitud)
-                ) {
-                    iconImage = IconImage(punto.iconoSprite)
-                    iconSize = 0.5
-                    iconOpacity = 1.0
-                }
-            }
-
-            destinationPoint?.let { point ->
-                PointAnnotation(point = point) {
-                    iconImage = IconImage("marcador_destino")
-                    iconSize = 0.5
-                    iconOpacity = 1.0
-                }
-            }
         }
 
         // CAPA 2: MIRA CENTRAL
@@ -330,7 +366,7 @@ fun MapScreen() {
         }
 
         // CAPA 5: BOTONES SUPERIORES DERECHOS
-        Column(
+        /*Column(
             modifier = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 16.dp),
             horizontalAlignment = Alignment.End
         ) {
@@ -346,7 +382,7 @@ fun MapScreen() {
                     sharedPref.edit().remove("dest_lat").remove("dest_lng").apply()
                 }) { Text("Quitar Destino") }
             }
-        }
+        }*/
 
         // CAPA 6: MENÚ LATERAL
         AnimatedVisibility(
@@ -386,6 +422,107 @@ fun MapScreen() {
                 tint = Color.White,
                 modifier = Modifier.size(32.dp)
             )
+        }
+        // =========================================================================
+        // CAPA 7: BARRA DE BÚSQUEDA MÚLTIPLE
+        // =========================================================================
+        var searchQuery by remember { mutableStateOf("") }
+        var isSearchActive by remember { mutableStateOf(false) }
+
+        if (!isMenuOpen) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 50.dp, start = 64.dp, end = 16.dp)
+                    .fillMaxWidth()
+            ) {
+                // 1. La caja de texto del buscador (Opacidad 85%)
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = {
+                        searchQuery = it
+                        isSearchActive = it.isNotEmpty()
+                    },
+                    placeholder = { Text("Buscar ...", color = Color.Gray) },
+                    leadingIcon = { Icon(painterResource(id = android.R.drawable.ic_menu_search), contentDescription = "Buscar", tint = Color.DarkGray) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = ""; isSearchActive = false }) {
+                                Text("✕", color = Color.DarkGray, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.80f), RoundedCornerShape(8.dp)), // <--- OPACIDAD AJUSTABLE
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black
+                    )
+                )
+
+                // 2. Resultados desplegables (Opacidad 90%)
+                AnimatedVisibility(visible = isSearchActive) {
+                    val resultadosLocales = savedPoints.filter {
+                        it.nombre.contains(searchQuery, ignoreCase = true)
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                            .background(Color.White.copy(alpha = 0.90f), RoundedCornerShape(8.dp)) // <--- OPACIDAD DEL DESPLEGABLE
+                            .heightIn(max = 250.dp)
+                    ) {
+                        LazyColumn {
+                            item {
+                                Text("Tus Puntos Guardados", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+                            }
+
+                            if (resultadosLocales.isEmpty()) {
+                                item { Text("No se encontraron resultados", color = Color.DarkGray, modifier = Modifier.padding(8.dp)) }
+                            } else {
+                                items(resultadosLocales) { punto ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewportState.cameraState?.let {
+                                                    viewportState.setCameraOptions {
+                                                        center(Point.fromLngLat(punto.longitud, punto.latitud))
+                                                        zoom(18.0)
+                                                    }
+                                                }
+                                                searchQuery = ""
+                                                isSearchActive = false
+                                            }
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // BUSCAMOS EL ÍCONO CORRESPONDIENTE (icon_5 hasta icon_63)
+                                        val iconoRecurso = iconosDisponibles.find { it.first == punto.iconoSprite }?.second
+                                        if (iconoRecurso != null) {
+                                            Image(
+                                                painter = painterResource(id = iconoRecurso),
+                                                contentDescription = null,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        } else {
+                                            Spacer(modifier = Modifier.size(28.dp))
+                                        }
+
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(punto.nombre, color = Color.Black, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // =========================================================================
