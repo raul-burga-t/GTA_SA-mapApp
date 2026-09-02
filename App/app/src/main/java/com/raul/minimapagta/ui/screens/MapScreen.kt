@@ -366,13 +366,13 @@ fun MapScreen() {
         }
 
         // CAPA 5: BOTONES SUPERIORES DERECHOS
-        /*Column(
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 16.dp),
+        Column(
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 100.dp, end = 16.dp),
             horizontalAlignment = Alignment.End
         ) {
-            Button(onClick = { /* Form Misión */ }) { Text("Agregar Misión") }
+            /*Button(onClick = { /* Form Misión */ }) { Text("Agregar Misión") }
             Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = { /* Form Rutina */ }) { Text("Agregar Rutina") }
+            Button(onClick = { /* Form Rutina */ }) { Text("Agregar Rutina") }*/
 
             if (destinationPoint != null) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -382,7 +382,7 @@ fun MapScreen() {
                     sharedPref.edit().remove("dest_lat").remove("dest_lng").apply()
                 }) { Text("Quitar Destino") }
             }
-        }*/
+        }
 
         // CAPA 6: MENÚ LATERAL
         AnimatedVisibility(
@@ -399,10 +399,10 @@ fun MapScreen() {
                     .padding(top = 80.dp, start = 16.dp, end = 16.dp)
             ) {
                 Column {
-                    MenuListItem(texto = "Revisar Misiones", iconId = R.drawable.ic_flecha_menu) {}
+                    /*MenuListItem(texto = "Revisar Misiones", iconId = R.drawable.ic_flecha_menu) {}
                     Spacer(modifier = Modifier.height(24.dp))
                     MenuListItem(texto = "Revisar Rutinas", iconId = R.drawable.ic_flecha_menu) {}
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(24.dp))*/
                     // NUEVO BOTÓN DE ADMINISTRACIÓN
                     MenuListItem(texto = "Revisar puntos de interés", iconId = R.drawable.ic_flecha_menu) {
                         isMenuOpen = false
