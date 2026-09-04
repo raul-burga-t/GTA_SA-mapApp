@@ -35,16 +35,9 @@ El proyecto sigue las mejores prácticas de desarrollo en Android utilizando el 
 ---
 
 ## 📱 Capturas de Pantalla / Demo
-
-![alt text](image-1.png)
-![alt text](image.png)
-![alt text](image-2.png)
-![alt text](image-3.png)
-![alt text](image-4.png)
-
 | Mapa Principal | Formulario de Puntos (Compose) | Gestión de Base de Datos (Room) |
 | :---: | :---: | :---: |
-| <img src="URL_A_TU_IMAGEN_O_GIF_1" width="200"/> | <img src="URL_A_TU_IMAGEN_O_GIF_2" width="200"/> | <img src="URL_A_TU_IMAGEN_O_GIF_3" width="200"/> |
+| <img src="D:\Programacion\Proyectos\GTA_SA-mapApp\Pruebas" width="200"/> | <img src="URL_A_TU_IMAGEN_O_GIF_2" width="200"/> | <img src="URL_A_TU_IMAGEN_O_GIF_3" width="200"/> |
 
 ---
 
