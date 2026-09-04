@@ -1,3 +1,4 @@
+
 # GTA_SA-mapApp
 
 ![Android](https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)
@@ -37,12 +38,11 @@ El proyecto sigue las mejores prácticas de desarrollo en Android utilizando el 
 ## 📱 Capturas de Pantalla / Demo
 | Mapa Principal | Formulario de Puntos (Compose) | Gestión de Base de Datos (Room) |
 | :---: | :---: | :---: |
-| <img src="D:\Programacion\Proyectos\GTA_SA-mapApp\Pruebas" width="200"/> | <img src="URL_A_TU_IMAGEN_O_GIF_2" width="200"/> | <img src="URL_A_TU_IMAGEN_O_GIF_3" width="200"/> |
+| <img src="https://github.com/user-attachments/assets/a501b615-9fff-4107-959d-24c682f7731e" width="200"/> | <img src="https://github.com/user-attachments/assets/f38788e9-ffc3-4e89-baab-b055d8363223" width="200"/> | <img src="https://github.com/user-attachments/assets/7778488f-c2a0-4443-874e-aae4b3f0aee1" width="200"/> |
 
 ---
 
 ## 🚀 Instalación y Pruebas
-
 Si deseas clonar el proyecto y compilarlo localmente:
 
 1.  Clona este repositorio:
